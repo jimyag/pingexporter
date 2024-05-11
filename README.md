@@ -6,4 +6,25 @@ It collects ping metrics and generates detailed reports for analysis.
 
 This tool draws inspiration from both the [ping_exporter](https://github.com/czerwonk/ping_exporter) and [SmokePing](https://github.com/oetiker/SmokePing) repositories, combining their strengths and introducing additional enhancements.
 
-Please note that the project is still in its early stages of development, and there may be some issues or incomplete documentation.
+## install
+
+```bash
+go get github.com/jimyag/pingexporter@latest
+```
+
+or via [github release](https://github.com/jimyag/pingexporter/releases)
+
+## usage
+
+```bash
+pingexporter config.toml
+```
+
+```bash
+curl http://localhost:9113/metrics
+
+```
+
+## config
+
+see [config file](config.toml) for more details
