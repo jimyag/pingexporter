@@ -7,6 +7,8 @@ jobs:
   releases-matrix:
     name: Release Go Binary
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     strategy:
       max-parallel: 1
       matrix:
