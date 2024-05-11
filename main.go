@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"net/http"
 	"os"
 
@@ -33,12 +32,8 @@ func main() {
 	prometheus.MustRegister(ping)
 	http.Handle("/metrics", promhttp.Handler())
 
-	go func() {
-		log.Info().Str("address", cfg.Web.Address).Msg("starting web server")
-		if err := http.ListenAndServe(cfg.Web.Address, nil); err != nil {
-			fmt.Println(err)
-		}
-	}()
-
-	select {}
+	log.Info().Str("address", cfg.Web.Address).Msg("starting web server")
+	if err := http.ListenAndServe(cfg.Web.Address, nil); err != nil {
+		log.Panic(err).Msg("listen failed")
+	}
 }

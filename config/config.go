@@ -72,7 +72,7 @@ func (c *Config) Verify() {
 	}
 
 	if len(c.Targets) == 0 {
-		log.Panic().Msg("No targets specified")
+		log.Panic().Msg("no targets specified")
 	}
 }
 
@@ -105,13 +105,11 @@ func (cfg *Config) TargetConfigByAddr(addr string) TargetConfig {
 func (c *Config) GenMonitor() (*mon.Monitor, error) {
 	var bind4, bind6 string
 	if ln, err := net.Listen("tcp4", "127.0.0.1:0"); err == nil {
-		// ipv4 enabled
-		ln.Close()
+		_ = ln.Close()
 		bind4 = "0.0.0.0"
 	}
 	if ln, err := net.Listen("tcp6", "[::1]:0"); err == nil {
-		// ipv6 enabled
-		ln.Close()
+		_ = ln.Close()
 		bind6 = "::"
 	}
 	pinger, err := ping.New(bind4, bind6)
@@ -129,17 +127,17 @@ func (c *Config) GenMonitor() (*mon.Monitor, error) {
 	monitor.HistorySize = c.Ping.History
 	resolver := c.SetupResolver()
 	for i, target := range c.Targets {
-		addrs, err := resolver.LookupIPAddr(context.Background(), target.Addr)
+		ipAddrs, err := resolver.LookupIPAddr(context.Background(), target.Addr)
 		if err != nil {
 			log.Error(err).Str("target", target.Addr).Msg("cannot resolve target address")
 			continue
 		}
-		for j, addr := range addrs {
-			key := genPingMonitorKey(target.Addr, addr)
-			if err := monitor.AddTargetDelayed(key, addr,
+		for j, ipAddr := range ipAddrs {
+			key := genPingMonitorKey(target.Addr, ipAddr)
+			if err := monitor.AddTargetDelayed(key, ipAddr,
 				time.Duration(10*i+j)*time.Millisecond,
 			); err != nil {
-				log.Error(err).Str("target", target.Addr).
+				log.Error(err).Str("addr", target.Addr).
 					Str("key", key).
 					Msg("cannot add target")
 			}
@@ -149,22 +147,21 @@ func (c *Config) GenMonitor() (*mon.Monitor, error) {
 	return monitor, nil
 }
 
-// genPingMonitorKey returns a unique key for the monitor based on target and addr
+// genPingMonitorKey returns a unique key for the monitor based on addr and ipAddr
 // for example: "test.host.com 192.168.2.1 v4"
-func genPingMonitorKey(target string, addr net.IPAddr) string {
-	if addr.IP.To4() == nil {
-		return fmt.Sprintf("%s %s v6", target, addr.String())
+func genPingMonitorKey(addr string, ipAddr net.IPAddr) string {
+	if ipAddr.IP.To4() == nil {
+		return fmt.Sprintf("%s %s v6", addr, ipAddr.String())
 	}
-	return fmt.Sprintf("%s %s v4", target, addr.String())
+	return fmt.Sprintf("%s %s v4", addr, ipAddr.String())
 }
 
-func ParseMonitorKey(key string) (string, net.IPAddr) {
-
+func ParseMonitorKey(key string) (addr string, ipAddr net.IPAddr, version string) {
 	parts := strings.Split(key, " ")
 	if len(parts) != 3 {
 		log.Panic().Str("key", key).Msg("cannot parse monitor key")
 	}
-	host := parts[0]
+	addr = parts[0]
 	ip := net.ParseIP(parts[1])
 	if ip == nil {
 		log.Panic().Str("key", key).Msg("unexpected ip in monitor key")
@@ -176,5 +173,10 @@ func ParseMonitorKey(key string) (string, net.IPAddr) {
 	if parts[2] == "v6" && ip.To4() != nil {
 		log.Panic().Str("key", key).Msg("unexpected ip version in monitor key")
 	}
-	return host, net.IPAddr{IP: ip}
+	if ip.To4() == nil {
+		version = "v4"
+	} else {
+		version = "v6"
+	}
+	return addr, net.IPAddr{IP: ip}, version
 }

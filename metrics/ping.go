@@ -2,7 +2,6 @@ package metrics
 
 import (
 	"sort"
-	"strings"
 
 	mon "github.com/digineo/go-ping/monitor"
 	"github.com/jimyag/log"
@@ -14,6 +13,7 @@ import (
 type Ping struct {
 	monitor    *mon.Monitor
 	cfg        *config.Config
+	cl         *config.CustomLabel
 	globalKey  []string
 	metrics    map[string]*mon.Metrics
 	bestDesc   *prometheus.Desc
@@ -28,9 +28,11 @@ func New(cfg *config.Config) *Ping {
 	if err != nil {
 		log.Panic(err).Msg("gen monitor")
 	}
+	cl := config.NewCustomLabel(cfg.Targets)
 	p := &Ping{
 		monitor: m,
 		cfg:     cfg,
+		cl:      cl,
 	}
 	p.init()
 	return p
@@ -40,22 +42,25 @@ func (p *Ping) Collect(ch chan<- prometheus.Metric) {
 	if m := p.monitor.Export(); len(m) > 0 {
 		p.metrics = m
 	}
-	for target, metrics := range p.metrics {
-		// target ip version
-		l := strings.Split(target, " ")
+	for key, metrics := range p.metrics {
+		// addr ipAddr version
+		addr, ipAddr, version := config.ParseMonitorKey(key)
+		labelValues := []string{addr, ipAddr.String(), version}
 		if p.globalKey != nil {
 			for _, k := range p.globalKey {
-				l = append(l, p.cfg.GlobalLabels[k])
+				labelValues = append(labelValues, p.cfg.GlobalLabels[k])
 			}
 		}
+		customLabelVal := p.cl.Values(p.cfg.TargetConfigByAddr(addr))
+		labelValues = append(labelValues, customLabelVal...)
 		if metrics.PacketsSent > metrics.PacketsLost {
-			ch <- prometheus.MustNewConstMetric(p.bestDesc, prometheus.GaugeValue, float64(metrics.Best), l...)
-			ch <- prometheus.MustNewConstMetric(p.worstDesc, prometheus.GaugeValue, float64(metrics.Worst), l...)
-			ch <- prometheus.MustNewConstMetric(p.meanDesc, prometheus.GaugeValue, float64(metrics.Mean), l...)
-			ch <- prometheus.MustNewConstMetric(p.stdDevDesc, prometheus.GaugeValue, float64(metrics.StdDev), l...)
+			ch <- prometheus.MustNewConstMetric(p.bestDesc, prometheus.GaugeValue, float64(metrics.Best), labelValues...)
+			ch <- prometheus.MustNewConstMetric(p.worstDesc, prometheus.GaugeValue, float64(metrics.Worst), labelValues...)
+			ch <- prometheus.MustNewConstMetric(p.meanDesc, prometheus.GaugeValue, float64(metrics.Mean), labelValues...)
+			ch <- prometheus.MustNewConstMetric(p.stdDevDesc, prometheus.GaugeValue, float64(metrics.StdDev), labelValues...)
 		}
 		loss := float64(metrics.PacketsLost) / float64(metrics.PacketsSent)
-		ch <- prometheus.MustNewConstMetric(p.lossDesc, prometheus.GaugeValue, loss, l...)
+		ch <- prometheus.MustNewConstMetric(p.lossDesc, prometheus.GaugeValue, loss, labelValues...)
 	}
 }
 
@@ -68,7 +73,8 @@ func (p *Ping) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (p *Ping) init() {
-	label := []string{"target", "ip", "version"}
+	// base labels
+	label := []string{"addr", "ip", "version"}
 	if p.cfg.GlobalLabels != nil {
 		p.globalKey = make([]string, 0, len(p.cfg.GlobalLabels))
 		for k := range p.cfg.GlobalLabels {
@@ -76,6 +82,8 @@ func (p *Ping) init() {
 		}
 		sort.Strings(p.globalKey)
 		label = append(label, p.globalKey...)
+		// set custom labels
+		label = append(label, p.cl.Labels()...)
 	}
 	p.bestDesc = newDesc("rtt_best", "best round trip time", label, nil)
 	p.worstDesc = newDesc("rtt_worst", "worst round trip time", label, nil)

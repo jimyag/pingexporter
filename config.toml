@@ -2,13 +2,18 @@
 name_server = "223.5.5.5"
 
 [web]
-address = "0.0.0.0:8080"
+address = "0.0.0.0:9113"
 
 [[targets]]
 addr = "223.5.5.5"
+[targets.labels]
+"some_label" = "test"
+
 
 [[targets]]
 addr = "114.114.114.114"
+[targets.labels]
+"custom_label" = "hihihihi"
 
 [global_labels]
 "from" = "192.168.2.1"
