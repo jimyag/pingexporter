@@ -7,7 +7,7 @@ require (
 	github.com/digineo/go-ping v1.1.0
 	github.com/jimyag/log v0.1.1
 	github.com/jimyag/version-go v0.1.1
-	github.com/prometheus/client_golang v1.19.0
+	github.com/prometheus/client_golang v1.19.1
 )
 
 require (
@@ -22,6 +22,6 @@ require (
 	github.com/rs/zerolog v1.31.0 // indirect
 	golang.org/x/net v0.24.0 // indirect
 	golang.org/x/sys v0.19.0 // indirect
-	google.golang.org/protobuf v1.32.0 // indirect
+	google.golang.org/protobuf v1.33.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 )
