@@ -30,7 +30,7 @@ func main() {
 	cfg.Verify()
 	ping := metrics.New(cfg)
 	prometheus.MustRegister(ping)
-	http.Handle("/metrics", promhttp.Handler())
+	http.Handle(cfg.Web.MetricsPath, promhttp.Handler())
 
 	log.Info().Str("address", cfg.Web.Address).Msg("starting web server")
 	if err := http.ListenAndServe(cfg.Web.Address, nil); err != nil {
