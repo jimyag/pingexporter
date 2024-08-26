@@ -7,7 +7,7 @@ require (
 	github.com/digineo/go-ping v1.1.0
 	github.com/jimyag/log v0.1.1
 	github.com/jimyag/version-go v0.1.1
-	github.com/prometheus/client_golang v1.20.1
+	github.com/prometheus/client_golang v1.20.2
 )
 
 require (
