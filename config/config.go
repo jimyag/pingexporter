@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"slices"
 	"strings"
 	"time"
 
@@ -36,6 +37,11 @@ type Config struct {
 }
 
 func (c *Config) Default() {
+	for i := range c.Targets {
+		if c.Targets[i].IPVersion == "" {
+			c.Targets[i].IPVersion = "all"
+		}
+	}
 	if c.Ping.Interval == 0 {
 		c.Ping.Interval = 5 * time.Second
 	}
@@ -91,6 +97,14 @@ func (c *Config) Verify() error {
 	}
 	seen := make(map[string]bool)
 	for i, target := range c.Targets {
+		switch target.IPVersion {
+		case "", "all", "v4", "v6":
+		default:
+			return fmt.Errorf("targets[%d].ip_version must be all, v4 or v6", i)
+		}
+		if ip := net.ParseIP(target.Addr); ip != nil && !target.acceptsIP(ip) {
+			return fmt.Errorf("targets[%d].ip_version does not match literal address %q", i, target.Addr)
+		}
 		if target.Addr == "" || strings.ContainsAny(target.Addr, " \t\r\n") {
 			return fmt.Errorf("targets[%d].addr must be a nonempty address without whitespace", i)
 		}
@@ -119,9 +133,9 @@ func (c *Config) SetupResolver() *net.Resolver {
 	if _, _, err := net.SplitHostPort(server); err != nil {
 		server = net.JoinHostPort(server, "53")
 	}
-	dialer := func(ctx context.Context, _, _ string) (net.Conn, error) {
+	dialer := func(ctx context.Context, network, _ string) (net.Conn, error) {
 		d := net.Dialer{}
-		return d.DialContext(ctx, "udp", server)
+		return d.DialContext(ctx, network, server)
 	}
 
 	return &net.Resolver{PreferGo: true, Dial: dialer}
@@ -137,7 +151,7 @@ func (cfg *Config) TargetConfigByAddr(addr string) TargetConfig {
 	return TargetConfig{Addr: addr}
 }
 
-func (c *Config) GenMonitor(onResolve func(string, bool)) (*mon.Monitor, error) {
+func (c *Config) GenMonitor(onResolve func(addr string, success, changed bool)) (*mon.Monitor, error) {
 	if err := c.Verify(); err != nil {
 		return nil, err
 	}
@@ -178,20 +192,20 @@ func (c *Config) GenMonitor(onResolve func(string, bool)) (*mon.Monitor, error) 
 	return monitor, nil
 }
 
-func (c *Config) refreshTargets(monitor *mon.Monitor, lookup func(context.Context, string) ([]net.IPAddr, error), current map[string]map[string]net.IPAddr, onResolve func(string, bool)) {
+func (c *Config) refreshTargets(monitor *mon.Monitor, lookup func(context.Context, string) ([]net.IPAddr, error), current map[string]map[string]net.IPAddr, onResolve func(string, bool, bool)) {
 	for i, target := range c.Targets {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		ipAddrs, err := lookup(ctx, target.Addr)
 		cancel()
-		if onResolve != nil && net.ParseIP(target.Addr) == nil {
-			onResolve(target.Addr, err == nil && len(ipAddrs) > 0)
+		ipAddrs = slices.DeleteFunc(ipAddrs, func(ip net.IPAddr) bool { return !target.acceptsIP(ip.IP) })
+		if err == nil && len(ipAddrs) == 0 {
+			err = fmt.Errorf("no addresses match ip_version %q", target.IPVersion)
 		}
 		if err != nil {
+			if onResolve != nil && net.ParseIP(target.Addr) == nil {
+				onResolve(target.Addr, false, false)
+			}
 			log.Error(err).Str("target", target.Addr).Msg("cannot resolve target address")
-			continue
-		}
-		if len(ipAddrs) == 0 {
-			log.Error().Str("target", target.Addr).Msg("target address resolved to no IPs")
 			continue
 		}
 		next := make(map[string]net.IPAddr, len(ipAddrs))
@@ -220,7 +234,32 @@ func (c *Config) refreshTargets(monitor *mon.Monitor, lookup func(context.Contex
 				monitor.RemoveTarget(key)
 			}
 		}
+		changed := false
+		if previous := current[target.Addr]; previous != nil {
+			changed = len(previous) != len(next)
+			for key := range next {
+				if _, exists := previous[key]; !exists {
+					changed = true
+				}
+			}
+			if changed {
+				oldIPs, newIPs := make([]string, 0, len(previous)), make([]string, 0, len(next))
+				for _, ip := range previous {
+					oldIPs = append(oldIPs, ip.String())
+				}
+				for _, ip := range next {
+					newIPs = append(newIPs, ip.String())
+				}
+				slices.Sort(oldIPs)
+				slices.Sort(newIPs)
+				log.Info().Str("target", target.Addr).Str("ip_version", target.IPVersion).
+					Strs("previous_ips", oldIPs).Strs("current_ips", newIPs).Msg("DNS addresses changed")
+			}
+		}
 		current[target.Addr] = next
+		if onResolve != nil && net.ParseIP(target.Addr) == nil {
+			onResolve(target.Addr, true, changed)
+		}
 	}
 }
 

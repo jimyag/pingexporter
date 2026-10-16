@@ -35,6 +35,19 @@ negative duration such as `"-1s"` to disable refresh. Address changes add new
 probes and remove obsolete ones without restarting probes whose addresses
 have not changed. Failed or empty DNS responses keep the last resolved targets
 until a later refresh succeeds. DNS lookups time out after five seconds.
+The configured DNS server supports UDP queries with TCP fallback for truncated
+responses.
+
+Each target accepts `ip_version = "all"` (the default), `"v4"`, or `"v6"`:
+
+```toml
+[[targets]]
+addr = "example.com"
+ip_version = "v6"
+```
+
+Literal addresses must match the selected family. If a hostname has no addresses
+in that family, resolution is reported as failed and existing probes are retained.
 
 Configuration is checked before opening ICMP sockets. Ping intervals, timeouts
 and history sizes must be positive. Target addresses must be nonempty and unique.
@@ -49,6 +62,12 @@ lookup returned addresses and 0 after a failed or empty response.
 `ping_exporter_dns_last_success_timestamp_seconds` records the last successful
 lookup time, or 0 if none has succeeded. Both metrics include `addr`, global
 labels and target labels. Literal IP targets do not emit DNS metrics.
+
+`ping_exporter_dns_address_changes_total` counts changes to the selected address
+set after its first successful resolution. Startup, address reordering and failed
+or empty lookups do not increment it. Each change also writes a structured
+`DNS addresses changed` log with `target`, `ip_version`, `previous_ips` and
+`current_ips`. New and old addresses are not added as labels on this counter.
 
 The `version` label on ping metrics is `v4` for IPv4 and `v6` for IPv6.
 Earlier releases had these values reversed; update any queries that compensated

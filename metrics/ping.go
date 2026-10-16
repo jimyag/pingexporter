@@ -23,6 +23,7 @@ type Ping struct {
 	lossDesc       *prometheus.Desc //package lost / packets send
 	dnsSuccess     *prometheus.GaugeVec
 	dnsLastSuccess *prometheus.GaugeVec
+	dnsChanges     *prometheus.CounterVec
 }
 
 func New(cfg *config.Config) *Ping {
@@ -43,6 +44,7 @@ func New(cfg *config.Config) *Ping {
 func (p *Ping) Collect(ch chan<- prometheus.Metric) {
 	p.dnsSuccess.Collect(ch)
 	p.dnsLastSuccess.Collect(ch)
+	p.dnsChanges.Collect(ch)
 	for key, metrics := range p.monitor.Export() {
 		// addr ipAddr version
 		addr, ipAddr, version := config.ParseMonitorKey(key)
@@ -68,6 +70,7 @@ func (p *Ping) Collect(ch chan<- prometheus.Metric) {
 func (p *Ping) Describe(ch chan<- *prometheus.Desc) {
 	p.dnsSuccess.Describe(ch)
 	p.dnsLastSuccess.Describe(ch)
+	p.dnsChanges.Describe(ch)
 	ch <- p.bestDesc
 	ch <- p.worstDesc
 	ch <- p.meanDesc
@@ -99,21 +102,28 @@ func (p *Ping) init() {
 	p.dnsLastSuccess = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "ping_exporter_dns_last_success_timestamp_seconds", Help: "Unix timestamp of the last successful DNS lookup, or zero if none succeeded.", ConstLabels: p.cfg.GlobalLabels,
 	}, dnsLabels)
+	p.dnsChanges = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "ping_exporter_dns_address_changes_total", Help: "Number of resolved address set changes after the first successful resolution.", ConstLabels: p.cfg.GlobalLabels,
+	}, dnsLabels)
 	for _, target := range p.cfg.Targets {
 		if net.ParseIP(target.Addr) == nil {
 			values := append([]string{target.Addr}, p.cl.Values(target)...)
 			p.dnsSuccess.WithLabelValues(values...).Set(0)
 			p.dnsLastSuccess.WithLabelValues(values...).Set(0)
+			p.dnsChanges.WithLabelValues(values...).Add(0)
 		}
 	}
 }
 
-func (p *Ping) recordDNSLookup(addr string, success bool) {
+func (p *Ping) recordDNSLookup(addr string, success, changed bool) {
 	values := append([]string{addr}, p.cl.Values(p.cfg.TargetConfigByAddr(addr))...)
 	value := 0.0
 	if success {
 		value = 1
 		p.dnsLastSuccess.WithLabelValues(values...).SetToCurrentTime()
+		if changed {
+			p.dnsChanges.WithLabelValues(values...).Inc()
+		}
 	}
 	p.dnsSuccess.WithLabelValues(values...).Set(value)
 }
