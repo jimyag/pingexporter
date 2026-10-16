@@ -1,0 +1,28 @@
+name: Checks
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.x'
+          cache: true
+      - name: Unit tests
+        run: go test -race ./...
+      - name: DNS and metrics integration test
+        run: |
+          go test -c -race -tags=integration -o "$RUNNER_TEMP/pingexporter-integration.test" .
+          sudo "$RUNNER_TEMP/pingexporter-integration.test" -test.v -test.timeout=90s
+      - name: Build
+        run: go build ./...

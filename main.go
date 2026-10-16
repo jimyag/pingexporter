@@ -27,7 +27,10 @@ func main() {
 	}
 	log.Info().Any("config", cfg).Msg("loaded config")
 	cfg.Default()
-	cfg.Verify()
+	if err := cfg.Verify(); err != nil {
+		log.Error(err).Msg("invalid configuration")
+		os.Exit(1)
+	}
 	ping := metrics.New(cfg)
 	prometheus.MustRegister(ping)
 	http.Handle(cfg.Web.MetricsPath, promhttp.Handler())

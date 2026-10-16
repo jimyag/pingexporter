@@ -10,13 +10,14 @@ import (
 	"github.com/digineo/go-ping"
 	mon "github.com/digineo/go-ping/monitor"
 	"github.com/jimyag/log"
+	"github.com/prometheus/common/model"
 )
 
 // Config represents configuration for the exporter.
 type Config struct {
 	Targets []TargetConfig `toml:"targets"`
 	Ping    struct {
-		Interval time.Duration ` toml:"interval"`    // Interval for ICMP echo requests
+		Interval time.Duration `toml:"interval"`     // Interval for ICMP echo requests
 		Timeout  time.Duration `toml:"timeout"`      // Timeout for ICMP echo request
 		History  int           `toml:"history_size"` // Number of results to remember per target
 		Size     uint16        `toml:"payload_size"` // Payload size for ICMP echo requests
@@ -25,7 +26,7 @@ type Config struct {
 	DNS struct {
 		Refresh    time.Duration `toml:"refresh"`     // DNS refresh interval (0 defaults to one minute; negative disables refresh)
 		NameServer string        `toml:"name_server"` // DNS server used to resolve hostname of targets
-	} `yaml:"dns"`
+	} `toml:"dns"`
 
 	Web struct {
 		Address     string `toml:"address"`      // Address on which to expose metrics and web interface
@@ -63,17 +64,50 @@ func (c *Config) Default() {
 	}
 }
 
-func (c *Config) Verify() {
+func (c *Config) Verify() error {
+	if c.Ping.Interval <= 0 {
+		return fmt.Errorf("ping.interval must be greater than zero")
+	}
+	if c.Ping.Timeout <= 0 {
+		return fmt.Errorf("ping.timeout must be greater than zero")
+	}
 	if c.Ping.History < 1 {
-		log.Panic().Msg("ping.history-size must be greater than 0")
+		return fmt.Errorf("ping.history_size must be greater than zero")
 	}
 	if c.Ping.Size > 65500 {
-		log.Panic().Msg("ping.size must be between 0 and 65500")
+		return fmt.Errorf("ping.payload_size must be at most 65500")
 	}
 
 	if len(c.Targets) == 0 {
-		log.Panic().Msg("no targets specified")
+		return fmt.Errorf("targets must not be empty")
 	}
+	validLabel := func(name string) bool {
+		return model.LabelName(name).IsValid() && !strings.HasPrefix(name, "__") && name != "addr" && name != "ip" && name != "version"
+	}
+	for name := range c.GlobalLabels {
+		if !validLabel(name) {
+			return fmt.Errorf("global_labels.%s is invalid or reserved", name)
+		}
+	}
+	seen := make(map[string]bool)
+	for i, target := range c.Targets {
+		if target.Addr == "" || strings.ContainsAny(target.Addr, " \t\r\n") {
+			return fmt.Errorf("targets[%d].addr must be a nonempty address without whitespace", i)
+		}
+		if seen[target.Addr] {
+			return fmt.Errorf("targets[%d].addr duplicates address %q", i, target.Addr)
+		}
+		seen[target.Addr] = true
+		for name := range target.Labels {
+			if !validLabel(name) {
+				return fmt.Errorf("targets[%d].labels.%s is invalid or reserved", i, name)
+			}
+			if _, exists := c.GlobalLabels[name]; exists {
+				return fmt.Errorf("targets[%d].labels.%s conflicts with global_labels.%s", i, name, name)
+			}
+		}
+	}
+	return nil
 }
 
 func (c *Config) SetupResolver() *net.Resolver {
@@ -103,7 +137,10 @@ func (cfg *Config) TargetConfigByAddr(addr string) TargetConfig {
 	return TargetConfig{Addr: addr}
 }
 
-func (c *Config) GenMonitor() (*mon.Monitor, error) {
+func (c *Config) GenMonitor(onResolve func(string, bool)) (*mon.Monitor, error) {
+	if err := c.Verify(); err != nil {
+		return nil, err
+	}
 	var bind4, bind6 string
 	if ln, err := net.Listen("tcp4", "127.0.0.1:0"); err == nil {
 		_ = ln.Close()
@@ -128,24 +165,27 @@ func (c *Config) GenMonitor() (*mon.Monitor, error) {
 	monitor.HistorySize = c.Ping.History
 	resolver := c.SetupResolver()
 	current := make(map[string]map[string]net.IPAddr)
-	c.refreshTargets(monitor, resolver.LookupIPAddr, current)
+	c.refreshTargets(monitor, resolver.LookupIPAddr, current, onResolve)
 	if c.DNS.Refresh > 0 {
 		go func() {
 			ticker := time.NewTicker(c.DNS.Refresh)
 			defer ticker.Stop()
 			for range ticker.C {
-				c.refreshTargets(monitor, resolver.LookupIPAddr, current)
+				c.refreshTargets(monitor, resolver.LookupIPAddr, current, onResolve)
 			}
 		}()
 	}
 	return monitor, nil
 }
 
-func (c *Config) refreshTargets(monitor *mon.Monitor, lookup func(context.Context, string) ([]net.IPAddr, error), current map[string]map[string]net.IPAddr) {
+func (c *Config) refreshTargets(monitor *mon.Monitor, lookup func(context.Context, string) ([]net.IPAddr, error), current map[string]map[string]net.IPAddr, onResolve func(string, bool)) {
 	for i, target := range c.Targets {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		ipAddrs, err := lookup(ctx, target.Addr)
 		cancel()
+		if onResolve != nil && net.ParseIP(target.Addr) == nil {
+			onResolve(target.Addr, err == nil && len(ipAddrs) > 0)
+		}
 		if err != nil {
 			log.Error(err).Str("target", target.Addr).Msg("cannot resolve target address")
 			continue
@@ -211,9 +251,9 @@ func ParseMonitorKey(key string) (addr string, ipAddr net.IPAddr, version string
 		log.Panic().Str("key", key).Msg("unexpected ip version in monitor key")
 	}
 	if ip.To4() == nil {
-		version = "v4"
-	} else {
 		version = "v6"
+	} else {
+		version = "v4"
 	}
 	return addr, net.IPAddr{IP: ip}, version
 }

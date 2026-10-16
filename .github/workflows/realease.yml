@@ -4,7 +4,10 @@ on:
       - v*
 
 jobs:
+  checks:
+    uses: ./.github/workflows/checks.yml
   releases-matrix:
+    needs: checks
     name: Release Go Binary
     runs-on: ubuntu-latest
     permissions:
@@ -24,9 +27,10 @@ jobs:
           - goarch: amd64
             goos: windows
     steps:
-      - name: Show environment
-        run: export
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.x'
       - uses: ncipollo/release-action@v1
         with:
           allowUpdates: true
