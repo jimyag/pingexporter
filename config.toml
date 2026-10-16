@@ -1,5 +1,6 @@
 [dns]
 name_server = "223.5.5.5"
+refresh = "1m"
 
 [web]
 address = "0.0.0.0:9113"

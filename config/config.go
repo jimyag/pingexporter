@@ -23,7 +23,7 @@ type Config struct {
 	} `toml:"ping"`
 
 	DNS struct {
-		Refresh    time.Duration `toml:"refresh"`     // Interval for refreshing DNS records and updating targets accordingly (0 if disabled)
+		Refresh    time.Duration `toml:"refresh"`     // DNS refresh interval (0 defaults to one minute; negative disables refresh)
 		NameServer string        `toml:"name_server"` // DNS server used to resolve hostname of targets
 	} `yaml:"dns"`
 
@@ -81,12 +81,13 @@ func (c *Config) SetupResolver() *net.Resolver {
 		return net.DefaultResolver
 	}
 
-	if !strings.HasSuffix(c.DNS.NameServer, ":53") {
-		c.DNS.NameServer += ":53"
+	server := c.DNS.NameServer
+	if _, _, err := net.SplitHostPort(server); err != nil {
+		server = net.JoinHostPort(server, "53")
 	}
 	dialer := func(ctx context.Context, _, _ string) (net.Conn, error) {
 		d := net.Dialer{}
-		return d.DialContext(ctx, "udp", c.DNS.NameServer)
+		return d.DialContext(ctx, "udp", server)
 	}
 
 	return &net.Resolver{PreferGo: true, Dial: dialer}
@@ -126,25 +127,61 @@ func (c *Config) GenMonitor() (*mon.Monitor, error) {
 		c.Ping.Timeout)
 	monitor.HistorySize = c.Ping.History
 	resolver := c.SetupResolver()
+	current := make(map[string]map[string]net.IPAddr)
+	c.refreshTargets(monitor, resolver.LookupIPAddr, current)
+	if c.DNS.Refresh > 0 {
+		go func() {
+			ticker := time.NewTicker(c.DNS.Refresh)
+			defer ticker.Stop()
+			for range ticker.C {
+				c.refreshTargets(monitor, resolver.LookupIPAddr, current)
+			}
+		}()
+	}
+	return monitor, nil
+}
+
+func (c *Config) refreshTargets(monitor *mon.Monitor, lookup func(context.Context, string) ([]net.IPAddr, error), current map[string]map[string]net.IPAddr) {
 	for i, target := range c.Targets {
-		ipAddrs, err := resolver.LookupIPAddr(context.Background(), target.Addr)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ipAddrs, err := lookup(ctx, target.Addr)
+		cancel()
 		if err != nil {
 			log.Error(err).Str("target", target.Addr).Msg("cannot resolve target address")
 			continue
 		}
+		if len(ipAddrs) == 0 {
+			log.Error().Str("target", target.Addr).Msg("target address resolved to no IPs")
+			continue
+		}
+		next := make(map[string]net.IPAddr, len(ipAddrs))
 		for j, ipAddr := range ipAddrs {
 			key := genPingMonitorKey(target.Addr, ipAddr)
+			if _, exists := current[target.Addr][key]; exists {
+				next[key] = ipAddr
+				continue
+			}
 			if err := monitor.AddTargetDelayed(key, ipAddr,
 				time.Duration(10*i+j)*time.Millisecond,
 			); err != nil {
 				log.Error(err).Str("addr", target.Addr).
 					Str("key", key).
 					Msg("cannot add target")
+				continue
+			}
+			next[key] = ipAddr
+		}
+		// Keep existing probes if replacement targets could not be installed.
+		if len(next) == 0 {
+			continue
+		}
+		for key := range current[target.Addr] {
+			if _, exists := next[key]; !exists {
+				monitor.RemoveTarget(key)
 			}
 		}
-
+		current[target.Addr] = next
 	}
-	return monitor, nil
 }
 
 // genPingMonitorKey returns a unique key for the monitor based on addr and ipAddr

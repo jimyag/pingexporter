@@ -15,7 +15,6 @@ type Ping struct {
 	cfg        *config.Config
 	cl         *config.CustomLabel
 	globalKey  []string
-	metrics    map[string]*mon.Metrics
 	bestDesc   *prometheus.Desc
 	worstDesc  *prometheus.Desc
 	meanDesc   *prometheus.Desc
@@ -39,10 +38,7 @@ func New(cfg *config.Config) *Ping {
 }
 
 func (p *Ping) Collect(ch chan<- prometheus.Metric) {
-	if m := p.monitor.Export(); len(m) > 0 {
-		p.metrics = m
-	}
-	for key, metrics := range p.metrics {
+	for key, metrics := range p.monitor.Export() {
 		// addr ipAddr version
 		addr, ipAddr, version := config.ParseMonitorKey(key)
 		labelValues := []string{addr, ipAddr.String(), version}
