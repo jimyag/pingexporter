@@ -88,7 +88,7 @@ func (c *Config) Verify() error {
 		return fmt.Errorf("targets must not be empty")
 	}
 	validLabel := func(name string) bool {
-		return model.LabelName(name).IsValid() && !strings.HasPrefix(name, "__") && name != "addr" && name != "ip" && name != "version"
+		return model.LegacyValidation.IsValidLabelName(name) && !strings.HasPrefix(name, "__") && name != "addr" && name != "ip" && name != "version"
 	}
 	for name := range c.GlobalLabels {
 		if !validLabel(name) {

@@ -20,6 +20,8 @@ or via [github release](https://github.com/jimyag/pingexporter/releases)
 pingexporter config.toml
 ```
 
+`pingexporter --version` prints JSON with `gitTag`, `buildTime` and `goVersion`.
+
 ```bash
 curl http://localhost:9113/metrics
 
@@ -74,6 +76,8 @@ Earlier releases had these values reversed; update any queries that compensated
 for the old behavior when upgrading.
 
 ## Development checks
+
+Go 1.27 or newer is required. The preferred toolchain is Go 1.27.2.
 
 ```bash
 go test -race ./...

@@ -5,8 +5,8 @@ import (
 	"os"
 
 	"github.com/BurntSushi/toml"
+	_ "github.com/jimmicro/version"
 	"github.com/jimyag/log"
-	_ "github.com/jimyag/version-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 

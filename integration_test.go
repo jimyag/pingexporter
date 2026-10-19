@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/common/model"
 	"golang.org/x/net/dns/dnsmessage"
 )
 
@@ -204,7 +205,7 @@ from_host = "fixture"
 	client := &http.Client{Timeout: time.Second}
 	var body string
 	get := func(name, ip, version string) (float64, bool) {
-		var parser expfmt.TextParser
+		parser := expfmt.NewTextParser(model.LegacyValidation)
 		families, err := parser.TextToMetricFamilies(strings.NewReader(body))
 		if err != nil {
 			return 0, false

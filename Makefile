@@ -1,5 +1,5 @@
 version=$(shell git describe --tags --always)
-ldflags="-s -w -X github.com/jimyag/version-go.version=$(version) -X github.com/jimyag/version-go.enableCmd=true"
+ldflags="-s -w -X github.com/jimmicro/version.GitTag=$(version)"
 build:
 	go build -o pingexporter -v --trimpath -ldflags ${ldflags} ./
 arm64:
