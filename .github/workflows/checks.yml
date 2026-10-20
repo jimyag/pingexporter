@@ -3,10 +3,12 @@ name: Checks
 on:
   push:
     branches: ['**']
+  merge_group:
   pull_request:
   workflow_call:
 
 permissions:
+  pull-requests: read
   contents: read
 
 jobs:
@@ -14,10 +16,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
+      - name: Lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
+          only-new-issues: true
+          args: ./...
       - name: Unit tests
         run: go test -race ./...
       - name: DNS and metrics integration test
