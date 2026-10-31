@@ -11,7 +11,7 @@ require (
 	github.com/jimyag/log v0.1.1
 	github.com/prometheus/client_golang v1.25.0
 	github.com/prometheus/common v0.72.1
-	golang.org/x/net v0.61.0
+	golang.org/x/net v0.62.0
 )
 
 require (
