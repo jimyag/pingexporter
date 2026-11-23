@@ -6,12 +6,12 @@ toolchain go1.27.3
 
 require (
 	github.com/BurntSushi/toml v1.6.0
-	github.com/digineo/go-ping v1.2.0
+	github.com/digineo/go-ping v1.3.0
 	github.com/jimmicro/version v1.1.0
 	github.com/jimyag/log v0.1.1
 	github.com/prometheus/client_golang v1.25.0
 	github.com/prometheus/common v0.72.1
-	golang.org/x/net v0.61.0
+	golang.org/x/net v0.63.0
 )
 
 require (
@@ -24,7 +24,7 @@ require (
 	github.com/prometheus/client_model v0.6.3 // indirect
 	github.com/prometheus/procfs v0.22.0 // indirect
 	github.com/rs/zerolog v1.35.1 // indirect
-	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/sys v0.50.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 )
